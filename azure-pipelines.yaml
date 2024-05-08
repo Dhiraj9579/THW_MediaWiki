@@ -32,19 +32,25 @@ stages:
       inputs:
         command: 'init'
         workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+        backendServiceArm: 'VSAuthentication'
+        backendAzureRmResourceGroupName: 'nyns-rg'
+        backendAzureRmStorageAccountName: 'terraformfsstate'
+        backendAzureRmContainerName: 'testcontainer'
+        backendAzureRmKey: 'terraform.tfstate'
 
     - task: TerraformTaskV1@0
       displayName: 'Terraform Plan'
       inputs:
         command: 'plan'
         workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+        environmentServiceNameAzureRM: 'VSAuthentication'
 
     - task: TerraformTaskV1@0
       displayName: 'Terraform Apply'
       inputs:
         command: 'apply'
         workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
-        environmentServiceNameAzureRM: '<your_azure_service_connection_name>'
+        environmentServiceNameAzureRM: 'VSAuthentication'
 
 - stage: AnsibleDeployment
   displayName: 'Ansible Deployment'
