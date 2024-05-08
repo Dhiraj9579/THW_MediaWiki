@@ -1,0 +1,122 @@
+---
+- name: Deploy MediaWiki (Blue-Green Deployment)
+  hosts: all
+  become: yes
+  tasks:
+    - name: Install required packages for Red Hat Enterprise Linux 8
+      dnf:
+        name:
+          - httpd
+          - php
+          - php-mysqlnd
+          - php-gd
+          - php-xml
+          - mariadb-server
+          - mariadb
+          - firewalld
+        state: present
+
+    - name: Start MariaDB and secure it
+      systemd:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Secure MySQL installation
+      command: mysql_secure_installation
+      args:
+        stdin: |
+          y
+          THISpasswordSHOULDbeCHANGED
+          THISpasswordSHOULDbeCHANGED
+          y
+          y
+          y
+          y
+
+    - name: Create database and user
+      mysql_user:
+        name: wiki
+        password: "Password@12345"
+        login_user: root
+        login_password: ""
+        state: present
+
+    - name: Create database
+      mysql_db:
+        name: wikidatabase
+        state: present
+
+    - name: Grant privileges to database user
+      mysql_user:
+        name: wiki
+        password: "THISpasswordSHOULDbeCHANGED"
+        login_user: root
+        login_password: ""
+        priv: "*.*:ALL"
+        state: present
+
+    - name: Autostart webserver and database daemons (services)
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: started
+      loop:
+        - mariadb
+        - httpd
+
+    - name: Open ports for HTTP and HTTPS in firewall
+      firewalld:
+        service: "{{ item }}"
+        state: enabled
+        immediate: yes
+      loop:
+        - http
+        - https
+
+    - name: Check SELinux status
+      command: getenforce
+      register: selinux_status
+
+    - name: Set SELinux context for MediaWiki files
+      command: restorecon -FR /var/www/mediawiki-1.41.1/
+      when: selinux_status.stdout == "enforcing"
+      become: yes
+
+    - name: Set SELinux context for MediaWiki symbolic link
+      command: restorecon -FR /var/www/mediawiki
+      when: selinux_status.stdout == "enforcing"
+      become: yes
+
+    - name: Disable SELinux (alternative)
+      replace:
+        path: /etc/selinux/config
+        regexp: '^SELINUX=(enforcing|permissive)'
+        replace: 'SELINUX=disabled'
+      when: selinux_status.stdout == "enforcing"
+      become: yes
+
+    - name: Restart firewalld service
+      service:
+        name: firewalld
+        state: restarted
+
+    - name: Configure Traffic Manager for Blue endpoint
+      shell: >
+        az network traffic-manager endpoint update --resource-group "rg-resources"
+        --profile-name "azure-traffic-manager-profile"
+        --name blue
+        --type azureEndpoints
+        --target-resource "/subscriptions/{{ subscription_id }}/resourceGroups/rg-resources/providers/Microsoft.Network/loadBalancers/{{ azurerm_lb.lb_blue.name }}"
+        --priority 1
+        --endpoint-status Enabled
+
+    - name: Configure Traffic Manager for Green endpoint
+      shell: >
+        az network traffic-manager endpoint update --resource-group "rg-resources"
+        --profile-name "azure-traffic-manager-profile"
+        --name green
+        --type azureEndpoints
+        --target-resource "/subscriptions/{{ subscription_id }}/resourceGroups/rg-resources/providers/Microsoft.Network/loadBalancers/{{ azurerm_lb.lb_green.name }}"
+        --priority 2
+        --endpoint-status Enabled
