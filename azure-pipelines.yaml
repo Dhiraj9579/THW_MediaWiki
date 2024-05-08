@@ -4,18 +4,33 @@
 # https://aka.ms/yaml
 
 trigger:
-- main
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - terraform/*
+      - ansible/*
 
 pool:
   vmImage: ubuntu-latest
 
 steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.x'
+    addToPath: true
+
+- task: InstallTerraform@0
+  displayName: 'Install Terraform'
+  inputs:
+    terraformVersion: 'latest'
 
 - task: TerraformTaskV4@4
   inputs:
     provider: 'azurerm'
     command: 'init'
-    workingDirectory: '$(Build.SourcesDirectory)'
+    workingDirectory: '$(Build.SourcesDirectory)/terraform'
     backendServiceArm: 'VSAuthentication'
     backendAzureRmResourceGroupName: 'nyns-rg'
     backendAzureRmStorageAccountName: 'terraformfsstate'
@@ -26,12 +41,33 @@ steps:
   inputs:
     provider: 'azurerm'
     command: 'plan'
-    workingDirectory: '$(Build.SourcesDirectory)'
+    workingDirectory: '$(Build.SourcesDirectory)/terraform'
     environmentServiceNameAzureRM: 'VSAuthentication'
 
 - task: TerraformTaskV4@4
   inputs:
     provider: 'azurerm'
     command: 'apply'
-    workingDirectory: '$(Build.SourcesDirectory)'
+    workingDirectory: '$(Build.SourcesDirectory)/terraform'
     environmentServiceNameAzureRM: 'VSAuthentication'
+
+- task: InstallDependencies@0
+  displayName: 'Install Python dependencies'
+  inputs:
+    command: 'install'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+    targetType: 'inline'
+    pythonVersion: '3.x'
+    pipDependencies: |
+      ansible==2.10.12
+      pyOpenSSL
+
+- script: |
+    ansible-galaxy install -r ansible/requirements.yml
+  displayName: 'Install Ansible roles'
+
+- script: |
+    ansible-playbook ansible/deploy_mediawiki.yml
+  displayName: 'Run Ansible playbook'
+  env:
+    ANSIBLE_STDOUT_CALLBACK: 'yaml'  # Ensures output is in YAML format
