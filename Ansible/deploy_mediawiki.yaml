@@ -50,7 +50,7 @@
     - name: Grant privileges to database user
       mysql_user:
         name: wiki
-        password: "THISpasswordSHOULDbeCHANGED"
+        password: "Password@12345"
         login_user: root
         login_password: ""
         priv: "*.*:ALL"
